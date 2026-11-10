@@ -46,7 +46,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         if (nfc == null || !nfc.isEnabled()) { status.setText("Turn on NFC in phone settings."); return; }
         try {
             wsc = makeCredential(name, key);
-            nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK, null);
+            nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
             status.setText("Ready. Hold your phone against the stand.");
         } catch (Exception e) { status.setText("Could not prepare the Wi-Fi details."); }
     }
@@ -71,10 +71,11 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
 
     private static byte[] makeCredential(String name, String password) throws IOException {
         ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        tlv(inner, 0x1026, new byte[]{1});
         tlv(inner, 0x1045, name.getBytes("UTF-8"));
         tlv(inner, 0x1003, new byte[]{0, 0x20});
         tlv(inner, 0x100f, new byte[]{0, 0x08});
-        tlv(inner, 0x1020, new byte[]{0, 0, 0, 1});
+        tlv(inner, 0x1020, new byte[]{-1, -1, -1, -1, -1, -1});
         if (!password.isEmpty()) tlv(inner, 0x1027, password.getBytes("UTF-8"));
         ByteArrayOutputStream outer = new ByteArrayOutputStream();
         tlv(outer, 0x100e, inner.toByteArray());
