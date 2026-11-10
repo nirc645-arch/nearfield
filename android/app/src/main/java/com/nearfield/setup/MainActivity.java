@@ -38,7 +38,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(logo);
 
-        TextView heading = text("Set up your\\nWi-Fi stand.", 36, 0xfff7f7f5);
+        TextView heading = text("Set up your Wi-Fi stand.", 36, 0xfff7f7f5);
         heading.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         heading.setLetterSpacing(-0.04f);
         root.addView(heading, spacing(42));
@@ -67,7 +67,10 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status, spacing(20));
 
-        write.setOnClickListener(v -> prepare());
+        write.setOnClickListener(v -> {
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+            prepare();
+        });
         clear.setOnClickListener(v -> new AlertDialog.Builder(this)
                 .setTitle("Clear NFC tag?")
                 .setMessage("This removes the current contents of the tag.")
