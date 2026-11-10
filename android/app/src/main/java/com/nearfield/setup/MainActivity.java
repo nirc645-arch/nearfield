@@ -2,6 +2,7 @@ package com.nearfield.setup;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.nfc.tech.Ndef;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
@@ -183,8 +184,44 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             ndef.writeNdefMessage(message);
             wsc = null; clearingTag = false; nfc.disableReaderMode(this);
             show(clear ? "Tag cleared. You can write new details now." : "Done. Your stand is ready for customers.");
+            if (!clear) runOnUiThread(this::showWriteSuccess);
         } catch (Exception e) { show("Could not write this tag. Try another NFC tag."); }
         finally { try { ndef.close(); } catch (Exception ignored) {} }
+    }
+
+    private void showWriteSuccess() {
+        if (isFinishing() || isDestroyed()) return;
+
+        Dialog dialog = new Dialog(this);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(android.view.Gravity.CENTER);
+        card.setPadding(dp(40), dp(26), dp(40), dp(28));
+        card.setBackground(background(0xff232323, 0xff454545));
+
+        TextView check = text("✓", 54, 0xffb4ff78);
+        check.setGravity(android.view.Gravity.CENTER);
+        card.addView(check);
+
+        TextView message = text("Saved to tag", 16, 0xfff7f7f5);
+        message.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        message.setGravity(android.view.Gravity.CENTER);
+        card.addView(message, spacing(8));
+
+        dialog.setContentView(card);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(
+                    new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        }
+        dialog.show();
+
+        card.setAlpha(0f);
+        card.setScaleX(0.85f);
+        card.setScaleY(0.85f);
+        card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start();
+        card.postDelayed(() -> {
+            if (dialog.isShowing()) dialog.dismiss();
+        }, 1800);
     }
 
     private void show(String text) { runOnUiThread(() -> status.setText(text)); }
