@@ -1,7 +1,7 @@
 package com.nearfield.setup;
 
 import android.app.Activity;
-import android.nfc.Ndef;
+import android.nfc.tech.Ndef;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
