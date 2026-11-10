@@ -42,7 +42,10 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Clear tag", (dialog, which) -> prepareClear())
                 .show());
-        setContentView(root);
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFillViewport(true);
+        scrollView.addView(root);
+        setContentView(scrollView);
     }
 
     private LinearLayout.LayoutParams fieldParams() {
