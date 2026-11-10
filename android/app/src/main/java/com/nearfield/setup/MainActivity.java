@@ -1,6 +1,7 @@
 package com.nearfield.setup;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.nfc.tech.Ndef;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
@@ -17,6 +18,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private EditText ssid, password;
     private TextView status;
     private volatile byte[] wsc;
+    private volatile boolean clearingTag;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -31,8 +33,15 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         ssid = new EditText(this); ssid.setSingleLine(true); ssid.setHint("Wi-Fi name (SSID)"); root.addView(ssid, fieldParams());
         password = new EditText(this); password.setSingleLine(true); password.setHint("Wi-Fi password"); password.setInputType(129); root.addView(password, fieldParams());
         Button button = new Button(this); button.setText("Write to NFC stand"); root.addView(button, fieldParams());
+        Button clearButton = new Button(this); clearButton.setText("Clear NFC tag"); root.addView(clearButton, fieldParams());
         status = new TextView(this); status.setText("Network details are used to write the tag."); status.setTextColor(0xff777777); status.setPadding(0, 18, 0, 0); root.addView(status);
         button.setOnClickListener(v -> prepare());
+        clearButton.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Clear NFC tag?")
+                .setMessage("This removes the current contents of the tag.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Clear tag", (dialog, which) -> prepareClear())
+                .show());
         setContentView(root);
     }
 
@@ -45,23 +54,38 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         if (name.isEmpty()) { ssid.setError("Enter the Wi-Fi name"); return; }
         if (nfc == null || !nfc.isEnabled()) { status.setText("Turn on NFC in phone settings."); return; }
         try {
+            clearingTag = false;
             wsc = makeCredential(name, key);
             nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
             status.setText("Ready. Hold your phone against the stand.");
         } catch (Exception e) { status.setText("Could not prepare the Wi-Fi details."); }
     }
 
+    private void prepareClear() {
+        if (nfc == null || !nfc.isEnabled()) { status.setText("Turn on NFC in phone settings."); return; }
+        wsc = null;
+        clearingTag = true;
+        nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
+        status.setText("Ready to clear. Hold your phone against the tag.");
+    }
+
     @Override public void onTagDiscovered(Tag tag) {
+        boolean clear = clearingTag;
+        byte[] credential = wsc;
+        if (!clear && credential == null) return;
         Ndef ndef = Ndef.get(tag);
-        if (ndef == null) { show("This tag cannot store Wi-Fi records."); return; }
+        if (ndef == null) { show("This tag does not have a writable NDEF record."); return; }
         try {
             ndef.connect();
-            NdefRecord record = new NdefRecord(NdefRecord.TNF_MIME_MEDIA, "application/vnd.wfa.wsc".getBytes("US-ASCII"), new byte[0], wsc);
+            NdefRecord record = clear
+                    ? new NdefRecord(NdefRecord.TNF_EMPTY, new byte[0], new byte[0], new byte[0])
+                    : new NdefRecord(NdefRecord.TNF_MIME_MEDIA, "application/vnd.wfa.wsc".getBytes("US-ASCII"), new byte[0], credential);
             NdefMessage message = new NdefMessage(new NdefRecord[]{record});
             if (!ndef.isWritable()) { show("This NFC tag is locked."); return; }
             if (message.toByteArray().length > ndef.getMaxSize()) { show("This tag does not have enough space."); return; }
             ndef.writeNdefMessage(message);
-            wsc = null; nfc.disableReaderMode(this); show("Done. Your stand is ready for customers.");
+            wsc = null; clearingTag = false; nfc.disableReaderMode(this);
+            show(clear ? "Tag cleared. You can write new details now." : "Done. Your stand is ready for customers.");
         } catch (Exception e) { show("Could not write this tag. Try another NFC tag."); }
         finally { try { ndef.close(); } catch (Exception ignored) {} }
     }
