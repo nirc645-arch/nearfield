@@ -9,6 +9,9 @@ import android.nfc.NfcAdapter;
 import android.nfc.Tag;
 import android.os.Bundle;
 import android.graphics.Typeface;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.view.View;
 import android.widget.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -23,33 +26,121 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         nfc = NfcAdapter.getDefaultAdapter(this);
+        getWindow().setStatusBarColor(Color.rgb(18, 18, 18));
+        getWindow().setNavigationBarColor(Color.rgb(18, 18, 18));
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(28, 48, 28, 24);
-        root.setBackgroundColor(0xfffafafa);
-        TextView logo = new TextView(this); logo.setText("nearfield."); logo.setTextSize(21); logo.setTypeface(null, Typeface.BOLD); root.addView(logo);
-        TextView title = new TextView(this); title.setText("Put your Wi-Fi\non the stand."); title.setTextSize(34); title.setTypeface(null, Typeface.BOLD); title.setPadding(0, 40, 0, 8); root.addView(title);
-        TextView note = new TextView(this); note.setText("Enter your network details, then hold the phone against the NFC tag."); note.setTextSize(14); note.setTextColor(0xff666666); root.addView(note);
-        ssid = new EditText(this); ssid.setSingleLine(true); ssid.setHint("Wi-Fi name (SSID)"); root.addView(ssid, fieldParams());
-        password = new EditText(this); password.setSingleLine(true); password.setHint("Wi-Fi password"); password.setInputType(129); root.addView(password, fieldParams());
-        Button button = new Button(this); button.setText("Write to NFC stand"); root.addView(button, fieldParams());
-        Button clearButton = new Button(this); clearButton.setText("Clear NFC tag"); root.addView(clearButton, fieldParams());
-        status = new TextView(this); status.setText("Network details are used to write the tag."); status.setTextColor(0xff777777); status.setPadding(0, 18, 0, 0); root.addView(status);
-        button.setOnClickListener(v -> prepare());
-        clearButton.setOnClickListener(v -> new AlertDialog.Builder(this)
+        root.setPadding(dp(24), dp(24), dp(24), dp(32));
+        root.setBackgroundColor(0xff121212);
+
+        TextView logo = text("nearfield.", 21, 0xfff7f7f5);
+        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        root.addView(logo);
+
+        TextView heading = text("Set up your\\nWi-Fi stand.", 36, 0xfff7f7f5);
+        heading.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        heading.setLetterSpacing(-0.04f);
+        root.addView(heading, spacing(42));
+
+        TextView note = text("Add your network details, then tap your phone against the stand.", 15, 0xffa7a7a7);
+        note.setLineSpacing(dp(3), 1f);
+        root.addView(note, spacing(12));
+
+        root.addView(label("Wi-Fi name"), spacing(34));
+        ssid = input("Enter network name");
+        root.addView(ssid, inputSpacing());
+
+        root.addView(label("Password"), spacing(20));
+        password = input("Enter password");
+        password.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.setTypeface(Typeface.DEFAULT);
+        root.addView(password, inputSpacing());
+
+        Button write = button("Write to NFC stand", true);
+        root.addView(write, spacing(28));
+        Button clear = button("Clear NFC tag", false);
+        root.addView(clear, spacing(10));
+
+        status = text("Ready when you are.", 13, 0xffaaaaaa);
+        status.setLineSpacing(dp(2), 1f);
+        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        root.addView(status, spacing(20));
+
+        write.setOnClickListener(v -> prepare());
+        clear.setOnClickListener(v -> new AlertDialog.Builder(this)
                 .setTitle("Clear NFC tag?")
                 .setMessage("This removes the current contents of the tag.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Clear tag", (dialog, which) -> prepareClear())
                 .show());
+
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.addView(root);
         setContentView(scrollView);
     }
 
-    private LinearLayout.LayoutParams fieldParams() {
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.topMargin = 16; return p;
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private TextView text(String value, float size, int color) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        return view;
+    }
+
+    private TextView label(String value) {
+        TextView view = text(value, 13, 0xffeeeeec);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return view;
+    }
+
+    private GradientDrawable background(int color, int border) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(10));
+        if (border != 0) drawable.setStroke(dp(1), border);
+        return drawable;
+    }
+
+    private EditText input(String hint) {
+        EditText view = new EditText(this);
+        view.setSingleLine(true);
+        view.setHint(hint);
+        view.setTextSize(16);
+        view.setTextColor(0xfff7f7f5);
+        view.setHintTextColor(0xff777777);
+        view.setPadding(dp(16), 0, dp(16), 0);
+        view.setMinHeight(dp(54));
+        view.setBackground(background(0xff1c1c1c, 0xff3a3a3a));
+        return view;
+    }
+
+    private Button button(String title, boolean primary) {
+        Button view = new Button(this);
+        view.setText(title);
+        view.setAllCaps(false);
+        view.setTextSize(14);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setMinHeight(dp(54));
+        view.setTextColor(primary ? 0xff111111 : 0xffeeeeec);
+        view.setBackground(background(primary ? 0xfff4f4f1 : 0xff121212,
+                primary ? 0 : 0xff454545));
+        return view;
+    }
+
+    private LinearLayout.LayoutParams spacing(int top) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.topMargin = dp(top);
+        return params;
+    }
+
+    private LinearLayout.LayoutParams inputSpacing() {
+        return spacing(8);
     }
 
     private void prepare() {
