@@ -20,7 +20,11 @@ import java.io.IOException;
 public class MainActivity extends Activity implements NfcAdapter.ReaderCallback {
     private NfcAdapter nfc;
     private EditText ssid, password;
-    private TextView status;
+    private TextView status, heading, note, ssidLabel, passwordLabel;
+    private Button write, clear, englishButton, hebrewButton;
+    private LinearLayout root;
+    private boolean hebrew;
+    private String statusEnglish = "Ready when you are.";
     private volatile byte[] wsc;
     private volatile boolean clearingTag;
 
@@ -30,37 +34,50 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         getWindow().setStatusBarColor(Color.rgb(18, 18, 18));
         getWindow().setNavigationBarColor(Color.rgb(18, 18, 18));
 
-        LinearLayout root = new LinearLayout(this);
+        hebrew = getPreferences(MODE_PRIVATE).getBoolean("hebrew", false);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(24), dp(24), dp(24), dp(32));
         root.setBackgroundColor(0xff121212);
 
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        header.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         TextView logo = text("nearfield.", 21, 0xfff7f7f5);
         logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(logo);
+        header.addView(logo, new LinearLayout.LayoutParams(0, -2, 1));
+        englishButton = languageButton("EN");
+        hebrewButton = languageButton("HE");
+        header.addView(englishButton);
+        header.addView(hebrewButton);
+        root.addView(header);
+        englishButton.setOnClickListener(v -> setLanguage(false));
+        hebrewButton.setOnClickListener(v -> setLanguage(true));
 
-        TextView heading = text("Set up your Wi-Fi stand.", 36, 0xfff7f7f5);
+        heading = text("Set up your Wi-Fi stand.", 36, 0xfff7f7f5);
         heading.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         heading.setLetterSpacing(-0.04f);
         root.addView(heading, spacing(42));
 
-        TextView note = text("Add your network details, then tap your phone against the stand.", 15, 0xffa7a7a7);
+        note = text("Add your network details, then tap your phone against the stand.", 15, 0xffa7a7a7);
         note.setLineSpacing(dp(3), 1f);
         root.addView(note, spacing(12));
 
-        root.addView(label("Wi-Fi name"), spacing(34));
+        ssidLabel = label("Wi-Fi name");
+        root.addView(ssidLabel, spacing(34));
         ssid = input("Enter network name");
         root.addView(ssid, inputSpacing());
 
-        root.addView(label("Password"), spacing(20));
+        passwordLabel = label("Password");
+        root.addView(passwordLabel, spacing(20));
         password = input("Enter password");
         password.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         password.setTypeface(Typeface.DEFAULT);
         root.addView(password, inputSpacing());
 
-        Button write = button("Write to NFC stand", true);
+        write = button("Write to NFC stand", true);
         root.addView(write, spacing(28));
-        Button clear = button("Clear NFC tag", false);
+        clear = button("Clear NFC tag", false);
         root.addView(clear, spacing(10));
 
         status = text("Ready when you are.", 13, 0xffaaaaaa);
@@ -73,16 +90,86 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             prepare();
         });
         clear.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("Clear NFC tag?")
-                .setMessage("This removes the current contents of the tag.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Clear tag", (dialog, which) -> prepareClear())
+                .setTitle(t("Clear NFC tag?"))
+                .setMessage(t("This removes the current contents of the tag."))
+                .setNegativeButton(t("Cancel"), null)
+                .setPositiveButton(t("Clear tag"), (dialog, which) -> prepareClear())
                 .show());
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.addView(root);
         setContentView(scrollView);
+        setLanguage(hebrew);
+    }
+
+    private Button languageButton(String language) {
+        Button view = new Button(this);
+        view.setText(language);
+        view.setAllCaps(false);
+        view.setTextSize(12);
+        view.setMinWidth(dp(44));
+        view.setMinHeight(dp(44));
+        view.setPadding(dp(8), 0, dp(8), 0);
+        view.setBackgroundColor(Color.TRANSPARENT);
+        return view;
+    }
+
+    private void setLanguage(boolean useHebrew) {
+        hebrew = useHebrew;
+        getPreferences(MODE_PRIVATE).edit().putBoolean("hebrew", hebrew).apply();
+        root.setLayoutDirection(hebrew ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR);
+        heading.setText(t("Set up your Wi-Fi stand."));
+        heading.setLetterSpacing(hebrew ? 0 : -0.04f);
+        note.setText(t("Add your network details, then tap your phone against the stand."));
+        ssidLabel.setText(t("Wi-Fi name"));
+        passwordLabel.setText(t("Password"));
+        ssid.setHint(t("Enter network name"));
+        password.setHint(t("Enter password"));
+        write.setText(t("Write to NFC stand"));
+        clear.setText(t("Clear NFC tag"));
+        status.setText(t(statusEnglish));
+        englishButton.setTextColor(hebrew ? 0xff888888 : 0xfff7f7f5);
+        hebrewButton.setTextColor(hebrew ? 0xfff7f7f5 : 0xff888888);
+        englishButton.setContentDescription(hebrew ? "אנגלית" : "English");
+        hebrewButton.setContentDescription(hebrew ? "עברית" : "Hebrew");
+    }
+
+    private void setStatus(String value) {
+        statusEnglish = value;
+        status.setText(t(value));
+    }
+
+    private String t(String value) {
+        if (!hebrew) return value;
+        switch (value) {
+            case "Set up your Wi-Fi stand.": return "הגדירו את מעמד ה-Wi-Fi שלכם.";
+            case "Add your network details, then tap your phone against the stand.": return "הזינו את פרטי הרשת והצמידו את הטלפון למעמד.";
+            case "Wi-Fi name": return "שם רשת ה-Wi-Fi";
+            case "Password": return "סיסמה";
+            case "Enter network name": return "הזינו את שם הרשת";
+            case "Enter password": return "הזינו סיסמה";
+            case "Write to NFC stand": return "כתיבה למעמד ה-NFC";
+            case "Clear NFC tag": return "מחיקת תג ה-NFC";
+            case "Ready when you are.": return "מוכנים להתחיל.";
+            case "Clear NFC tag?": return "למחוק את תג ה-NFC?";
+            case "This removes the current contents of the tag.": return "הפעולה תמחק את התוכן הנוכחי של התג.";
+            case "Cancel": return "ביטול";
+            case "Clear tag": return "מחיקת התג";
+            case "Enter the Wi-Fi name": return "הזינו את שם רשת ה-Wi-Fi";
+            case "Turn on NFC in phone settings.": return "יש להפעיל NFC בהגדרות הטלפון.";
+            case "Ready. Hold your phone against the stand.": return "מוכן. הצמידו את הטלפון למעמד.";
+            case "Could not prepare the Wi-Fi details.": return "לא הצלחנו להכין את פרטי הרשת.";
+            case "Ready to clear. Hold your phone against the tag.": return "מוכן למחיקה. הצמידו את הטלפון לתג.";
+            case "This tag does not have a writable NDEF record.": return "לא ניתן לכתוב לתג הזה.";
+            case "This NFC tag is locked.": return "תג ה-NFC הזה נעול.";
+            case "This tag does not have enough space.": return "אין מספיק מקום בתג.";
+            case "Tag cleared. You can write new details now.": return "התג נמחק. אפשר לכתוב פרטים חדשים.";
+            case "Done. Your stand is ready for customers.": return "ההגדרה הושלמה. המעמד מוכן ללקוחות.";
+            case "Could not write this tag. Try another NFC tag.": return "לא הצלחנו לכתוב לתג. נסו תג NFC אחר.";
+            case "Saved to tag": return "נשמר בתג";
+            default: return value;
+        }
     }
 
     private int dp(float value) {
@@ -155,22 +242,22 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
 
     private void prepare() {
         String name = ssid.getText().toString(), key = password.getText().toString();
-        if (name.isEmpty()) { ssid.setError("Enter the Wi-Fi name"); return; }
-        if (nfc == null || !nfc.isEnabled()) { status.setText("Turn on NFC in phone settings."); return; }
+        if (name.isEmpty()) { ssid.setError(t("Enter the Wi-Fi name")); return; }
+        if (nfc == null || !nfc.isEnabled()) { setStatus("Turn on NFC in phone settings."); return; }
         try {
             clearingTag = false;
             wsc = makeCredential(name, key);
             nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
-            status.setText("Ready. Hold your phone against the stand.");
-        } catch (Exception e) { status.setText("Could not prepare the Wi-Fi details."); }
+            setStatus("Ready. Hold your phone against the stand.");
+        } catch (Exception e) { setStatus("Could not prepare the Wi-Fi details."); }
     }
 
     private void prepareClear() {
-        if (nfc == null || !nfc.isEnabled()) { status.setText("Turn on NFC in phone settings."); return; }
+        if (nfc == null || !nfc.isEnabled()) { setStatus("Turn on NFC in phone settings."); return; }
         wsc = null;
         clearingTag = true;
         nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
-        status.setText("Ready to clear. Hold your phone against the tag.");
+        setStatus("Ready to clear. Hold your phone against the tag.");
     }
 
     @Override public void onTagDiscovered(Tag tag) {
@@ -209,7 +296,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         check.setGravity(android.view.Gravity.CENTER);
         card.addView(check);
 
-        TextView message = text("Saved to tag", 16, 0xfff7f7f5);
+        TextView message = text(t("Saved to tag"), 16, 0xfff7f7f5);
         message.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         message.setGravity(android.view.Gravity.CENTER);
         card.addView(message, spacing(8));
@@ -230,7 +317,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         }, 1800);
     }
 
-    private void show(String text) { runOnUiThread(() -> status.setText(text)); }
+    private void show(String text) { runOnUiThread(() -> setStatus(text)); }
     @Override protected void onPause() { super.onPause(); if (nfc != null) nfc.disableReaderMode(this); }
 
     private static byte[] makeCredential(String name, String password) throws IOException {
