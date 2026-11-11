@@ -130,10 +130,16 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         view.setAllCaps(false);
         view.setTextSize(14);
         view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        view.setMinHeight(dp(54));
+        view.setMinHeight(dp(56));
+        view.setPadding(dp(18), 0, dp(18), 0);
         view.setTextColor(primary ? 0xff111111 : 0xffeeeeec);
-        view.setBackground(background(primary ? 0xfff4f4f1 : 0xff121212,
-                primary ? 0 : 0xff454545));
+
+        GradientDrawable surface = background(primary ? 0xfff4f4f1 : 0xff1b1b1b,
+                primary ? 0 : 0xff454545);
+        int rippleColor = primary ? 0x3383c95e : 0x33ffffff;
+        view.setBackground(new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(rippleColor), surface, null));
+        view.setElevation(dp(primary ? 2 : 0));
         return view;
     }
 
