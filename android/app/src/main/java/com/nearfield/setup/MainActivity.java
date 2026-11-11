@@ -120,9 +120,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         mark.setOrientation(LinearLayout.VERTICAL);
         mark.setGravity(android.view.Gravity.CENTER);
 
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(R.drawable.nearfield_icon);
-        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        IntroMark icon = new IntroMark();
         icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         mark.addView(icon, new LinearLayout.LayoutParams(dp(190), dp(190)));
 
@@ -141,16 +139,93 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         mark.setScaleX(0.88f);
         mark.setScaleY(0.88f);
         mark.animate().alpha(1f).scaleX(1f).scaleY(1f)
-                .setDuration(500)
+                .setDuration(260)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator())
                 .withEndAction(() -> intro.animate().alpha(0f)
-                        .setStartDelay(350)
+                        .setStartDelay(1100)
                         .setDuration(320)
                         .withEndAction(() -> {
                             screen.removeView(intro);
                             content.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
                         }).start())
                 .start();
+    }
+
+    private class IntroMark extends View {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Path letter = new android.graphics.Path();
+        private final android.graphics.Path[] waves = new android.graphics.Path[3];
+        private final android.graphics.Path visible = new android.graphics.Path();
+        private final android.graphics.PathMeasure measure = new android.graphics.PathMeasure();
+        private final android.animation.ValueAnimator animator;
+        private float progress;
+
+        IntroMark() {
+            super(MainActivity.this);
+            paint.setStyle(android.graphics.Paint.Style.STROKE);
+            paint.setStrokeWidth(17f);
+            paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+            paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+
+            letter.moveTo(37, 170);
+            letter.lineTo(68, 74);
+            letter.lineTo(142, 165);
+            letter.quadTo(151, 174, 155, 156);
+            letter.lineTo(161, 114);
+
+            waves[0] = new android.graphics.Path();
+            waves[0].moveTo(162, 92);
+            waves[0].quadTo(185, 112, 169, 137);
+            waves[1] = new android.graphics.Path();
+            waves[1].moveTo(179, 72);
+            waves[1].quadTo(220, 111, 187, 154);
+            waves[2] = new android.graphics.Path();
+            waves[2].moveTo(195, 52);
+            waves[2].quadTo(253, 111, 204, 174);
+
+            animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            animator.setDuration(1200);
+            animator.setInterpolator(new android.view.animation.LinearInterpolator());
+            animator.addUpdateListener(animation -> {
+                progress = (float) animation.getAnimatedValue();
+                invalidate();
+            });
+        }
+
+        @Override protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            animator.start();
+        }
+
+        @Override protected void onDetachedFromWindow() {
+            animator.cancel();
+            super.onDetachedFromWindow();
+        }
+
+        @Override protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            float size = Math.min(getWidth(), getHeight());
+            canvas.save();
+            canvas.translate((getWidth() - size) / 2f, (getHeight() - size) / 2f);
+            canvas.scale(size / 250f, size / 250f);
+            drawSegment(canvas, letter, Math.min(1f, progress / 0.55f), 0xfff7f7f5);
+            for (int i = 0; i < waves.length; i++) {
+                float start = 0.48f + i * 0.12f;
+                float waveProgress = Math.max(0f, Math.min(1f, (progress - start) / 0.25f));
+                drawSegment(canvas, waves[i], waveProgress, 0xff8bff35);
+            }
+            canvas.restore();
+        }
+
+        private void drawSegment(android.graphics.Canvas canvas, android.graphics.Path path,
+                                 float fraction, int color) {
+            if (fraction <= 0f) return;
+            measure.setPath(path, false);
+            visible.reset();
+            measure.getSegment(0f, measure.getLength() * fraction, visible, true);
+            paint.setColor(color);
+            canvas.drawPath(visible, paint);
+        }
     }
 
     private Button languageButton(String language) {
