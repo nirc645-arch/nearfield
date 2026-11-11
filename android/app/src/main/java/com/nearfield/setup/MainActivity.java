@@ -47,7 +47,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         header.addView(logo, new LinearLayout.LayoutParams(0, -2, 1));
         englishButton = languageButton("EN");
-        hebrewButton = languageButton("HE");
+        hebrewButton = languageButton("עבר");
         header.addView(englishButton);
         header.addView(hebrewButton);
         root.addView(header);
