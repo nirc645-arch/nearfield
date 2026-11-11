@@ -99,8 +99,58 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.addView(root);
-        setContentView(scrollView);
+        FrameLayout screen = new FrameLayout(this);
+        screen.addView(scrollView);
+        setContentView(screen);
         setLanguage(hebrew);
+        if (state == null && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            showIntro(screen, scrollView);
+        }
+    }
+
+    private void showIntro(FrameLayout screen, View content) {
+        FrameLayout intro = new FrameLayout(this);
+        intro.setBackgroundColor(0xff121212);
+        intro.setClickable(true);
+        intro.setContentDescription("Nearfield");
+        intro.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        content.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+
+        LinearLayout mark = new LinearLayout(this);
+        mark.setOrientation(LinearLayout.VERTICAL);
+        mark.setGravity(android.view.Gravity.CENTER);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.nearfield_icon);
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        mark.addView(icon, new LinearLayout.LayoutParams(dp(190), dp(190)));
+
+        TextView name = text("nearfield.", 22, 0xfff7f7f5);
+        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        name.setGravity(android.view.Gravity.CENTER);
+        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-2, -2);
+        nameParams.topMargin = dp(8);
+        mark.addView(name, nameParams);
+
+        FrameLayout.LayoutParams center = new FrameLayout.LayoutParams(-2, -2, android.view.Gravity.CENTER);
+        intro.addView(mark, center);
+        screen.addView(intro, new FrameLayout.LayoutParams(-1, -1));
+
+        mark.setAlpha(0f);
+        mark.setScaleX(0.88f);
+        mark.setScaleY(0.88f);
+        mark.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                .setDuration(500)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .withEndAction(() -> intro.animate().alpha(0f)
+                        .setStartDelay(350)
+                        .setDuration(320)
+                        .withEndAction(() -> {
+                            screen.removeView(intro);
+                            content.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+                        }).start())
+                .start();
     }
 
     private Button languageButton(String language) {
