@@ -158,10 +158,17 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         private final android.graphics.Path visible = new android.graphics.Path();
         private final android.graphics.PathMeasure measure = new android.graphics.PathMeasure();
         private final android.animation.ValueAnimator animator;
+        private final android.graphics.Shader silver = new android.graphics.LinearGradient(
+                30, 65, 150, 185, 0xffffffff, 0xffbfc2bf,
+                android.graphics.Shader.TileMode.CLAMP);
+        private final android.graphics.Shader green = new android.graphics.LinearGradient(
+                155, 55, 220, 175, 0xffc1ff94, 0xff65d823,
+                android.graphics.Shader.TileMode.CLAMP);
         private float progress;
 
         IntroMark() {
             super(MainActivity.this);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
             paint.setStyle(android.graphics.Paint.Style.STROKE);
             paint.setStrokeWidth(17f);
             paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
@@ -208,23 +215,27 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             canvas.save();
             canvas.translate((getWidth() - size) / 2f, (getHeight() - size) / 2f);
             canvas.scale(size / 250f, size / 250f);
-            drawSegment(canvas, letter, Math.min(1f, progress / 0.55f), 0xfff7f7f5);
+            drawSegment(canvas, letter, Math.min(1f, progress / 0.55f), false);
             for (int i = 0; i < waves.length; i++) {
                 float start = 0.48f + i * 0.12f;
                 float waveProgress = Math.max(0f, Math.min(1f, (progress - start) / 0.25f));
-                drawSegment(canvas, waves[i], waveProgress, 0xff8bff35);
+                drawSegment(canvas, waves[i], waveProgress, true);
             }
             canvas.restore();
         }
 
         private void drawSegment(android.graphics.Canvas canvas, android.graphics.Path path,
-                                 float fraction, int color) {
+                                 float fraction, boolean signal) {
             if (fraction <= 0f) return;
+            float eased = fraction * fraction * (3f - 2f * fraction);
             measure.setPath(path, false);
             visible.reset();
-            measure.getSegment(0f, measure.getLength() * fraction, visible, true);
-            paint.setColor(color);
+            measure.getSegment(0f, measure.getLength() * eased, visible, true);
+            paint.setShader(signal ? green : silver);
+            if (signal) paint.setShadowLayer(5f, 0f, 1f, 0x8867d534);
+            else paint.setShadowLayer(2f, 0f, 1f, 0x557f857f);
             canvas.drawPath(visible, paint);
+            paint.clearShadowLayer();
         }
     }
 
