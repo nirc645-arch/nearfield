@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.nfc.tech.Ndef;
+import android.nfc.tech.NfcA;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
@@ -21,12 +22,19 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private NfcAdapter nfc;
     private EditText ssid, password;
     private TextView status, heading, note, ssidLabel, passwordLabel;
-    private Button write, clear, englishButton, hebrewButton;
+    private Button write, clear, protect, unprotect, englishButton, hebrewButton;
     private LinearLayout root;
     private boolean hebrew;
     private String statusEnglish = "Ready when you are.";
     private volatile byte[] wsc;
     private volatile boolean clearingTag;
+    private volatile ProtectionRequest protectionRequest;
+
+    private static class ProtectionRequest {
+        final boolean protect;
+        final byte[] password;
+        ProtectionRequest(boolean protect, byte[] password) { this.protect = protect; this.password = password; }
+    }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -79,6 +87,10 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         root.addView(write, spacing(28));
         clear = button("Clear NFC tag", false);
         root.addView(clear, spacing(10));
+        protect = button("Protect Wi-Fi stand", false);
+        root.addView(protect, spacing(10));
+        unprotect = button("Remove stand protection", false);
+        root.addView(unprotect, spacing(10));
 
         status = text("Ready when you are.", 13, 0xffaaaaaa);
         status.setLineSpacing(dp(2), 1f);
@@ -95,6 +107,9 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
                 .setNegativeButton(t("Cancel"), null)
                 .setPositiveButton(t("Clear tag"), (dialog, which) -> prepareClear())
                 .show());
+
+        protect.setOnClickListener(v -> askProtectionPassword(true));
+        unprotect.setOnClickListener(v -> askProtectionPassword(false));
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
@@ -264,6 +279,8 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         password.setHint(t("Enter password"));
         write.setText(t("Write to NFC stand"));
         clear.setText(t("Clear NFC tag"));
+        protect.setText(t("Protect Wi-Fi stand"));
+        unprotect.setText(t("Remove stand protection"));
         status.setText(t(statusEnglish));
         englishButton.setTextColor(hebrew ? 0xff888888 : 0xfff7f7f5);
         hebrewButton.setTextColor(hebrew ? 0xfff7f7f5 : 0xff888888);
@@ -287,6 +304,22 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             case "Enter password": return "הזינו סיסמה";
             case "Write to NFC stand": return "כתיבה למעמד ה-NFC";
             case "Clear NFC tag": return "מחיקת תג ה-NFC";
+            case "Protect Wi-Fi stand": return "הגנה על עמדת ה-Wi-Fi";
+            case "Remove stand protection": return "הסרת ההגנה מהעמדה";
+            case "Set a stand password": return "הגדרת סיסמה לעמדה";
+            case "Enter the stand password": return "הזינו את סיסמת העמדה";
+            case "Use exactly 4 English letters or numbers. Keep this password to change the stand later. Guests can still read the Wi-Fi details.": return "השתמשו ב-4 אותיות באנגלית או ספרות. שמרו את הסיסמה כדי לעדכן את העמדה בהמשך. האורחים עדיין יוכלו לקרוא את פרטי ה-Wi-Fi.";
+            case "Use exactly 4 English letters or numbers.": return "יש להזין בדיוק 4 אותיות באנגלית או ספרות.";
+            case "Continue": return "המשך";
+            case "Hold your phone against the stand to protect it.": return "הצמידו את הטלפון לעמדה כדי להפעיל את ההגנה.";
+            case "Hold your phone against the stand to remove protection.": return "הצמידו את הטלפון לעמדה כדי להסיר את ההגנה.";
+            case "Stand protected. Keep your password to update it later.": return "העמדה מוגנת. שמרו את הסיסמה כדי לעדכן אותה בהמשך.";
+            case "Protection removed. Update the stand, then protect it again.": return "ההגנה הוסרה. עדכנו את העמדה ואז הפעילו את ההגנה מחדש.";
+            case "This stand cannot be password protected by Nearfield.": return "Nearfield לא יכולה להגן על העמדה הזו בסיסמה.";
+            case "This stand is already protected. Remove protection first.": return "העמדה כבר מוגנת. יש להסיר את ההגנה תחילה.";
+            case "This stand has no password protection.": return "העמדה אינה מוגנת בסיסמה.";
+            case "Password incorrect or stand cannot be changed.": return "הסיסמה שגויה או שלא ניתן לשנות את העמדה.";
+            case "Could not change protection. Keep the same password and try again.": return "לא הצלחנו לשנות את ההגנה. שמרו את אותה הסיסמה ונסו שוב.";
             case "Ready when you are.": return "מוכנים להתחיל.";
             case "Clear NFC tag?": return "למחוק את תג ה-NFC?";
             case "This removes the current contents of the tag.": return "הפעולה תמחק את התוכן הנוכחי של התג.";
@@ -381,6 +414,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         if (name.isEmpty()) { ssid.setError(t("Enter the Wi-Fi name")); return; }
         if (nfc == null || !nfc.isEnabled()) { setStatus("Turn on NFC in phone settings."); return; }
         try {
+            protectionRequest = null;
             clearingTag = false;
             wsc = makeCredential(name, key);
             nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
@@ -390,13 +424,113 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
 
     private void prepareClear() {
         if (nfc == null || !nfc.isEnabled()) { setStatus("Turn on NFC in phone settings."); return; }
+        protectionRequest = null;
         wsc = null;
         clearingTag = true;
         nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
         setStatus("Ready to clear. Hold your phone against the tag.");
     }
 
+    private void askProtectionPassword(boolean protectTag) {
+        if (nfc == null || !nfc.isEnabled()) { setStatus("Turn on NFC in phone settings."); return; }
+        EditText passwordInput = new EditText(this);
+        passwordInput.setSingleLine(true);
+        passwordInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        passwordInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(4)});
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(t(protectTag ? "Set a stand password" : "Enter the stand password"))
+                .setMessage(t("Use exactly 4 English letters or numbers. Keep this password to change the stand later. Guests can still read the Wi-Fi details."))
+                .setView(passwordInput)
+                .setNegativeButton(t("Cancel"), null)
+                .setPositiveButton(t("Continue"), null)
+                .create();
+        dialog.setOnShowListener(unused -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+            String password = passwordInput.getText().toString();
+            if (!password.matches("[A-Za-z0-9]{4}")) { passwordInput.setError(t("Use exactly 4 English letters or numbers.")); return; }
+            byte[] bytes = password.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            wsc = null;
+            clearingTag = false;
+            protectionRequest = new ProtectionRequest(protectTag, bytes);
+            try {
+                nfc.enableReaderMode(this, this, NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
+                setStatus(protectTag ? "Hold your phone against the stand to protect it." : "Hold your phone against the stand to remove protection.");
+                dialog.dismiss();
+            } catch (Exception error) {
+                protectionRequest = null;
+                setStatus("Could not change protection. Keep the same password and try again.");
+            }
+        }));
+        dialog.show();
+    }
+
+    private void changeProtection(Tag tag, ProtectionRequest request) {
+        NfcA tech = NfcA.get(tag);
+        String result = "Could not change protection. Keep the same password and try again.";
+        try {
+            if (tech == null) {
+                result = "This stand cannot be password protected by Nearfield.";
+            } else {
+                tech.connect();
+                byte[] version = tech.transceive(new byte[]{0x60});
+                if (version.length != 8 || version[0] != 0x00 || version[1] != 0x04
+                        || version[2] != 0x04 || version[3] != 0x02
+                        || version[6] != 0x13 || version[7] != 0x03) {
+                    result = "This stand cannot be password protected by Nearfield.";
+                } else {
+                    byte[] config = tech.transceive(new byte[]{0x30, (byte) 0xe3});
+                    if (config.length != 16 || (config[4] & 0x47) != 0) {
+                        result = "This stand cannot be password protected by Nearfield.";
+                    } else if (request.protect && (config[3] & 0xff) != 0xff) {
+                        result = "This stand is already protected. Remove protection first.";
+                    } else if (!request.protect && (config[3] & 0xff) == 0xff) {
+                        result = "This stand has no password protection.";
+                    } else if (request.protect) {
+                        writePage(tech, 0xe5, request.password);
+                        byte[] access = java.util.Arrays.copyOfRange(config, 4, 8);
+                        if ((access[0] & 0x80) != 0) {
+                            access[0] = (byte) (access[0] & 0x7f);
+                            writePage(tech, 0xe4, access);
+                        }
+                        byte[] settings = java.util.Arrays.copyOfRange(config, 0, 4);
+                        settings[3] = 0x04;
+                        writePage(tech, 0xe3, settings);
+                        result = "Stand protected. Keep your password to update it later.";
+                    } else {
+                        byte[] command = new byte[5];
+                        command[0] = 0x1b;
+                        System.arraycopy(request.password, 0, command, 1, 4);
+                        byte[] response = tech.transceive(command);
+                        if (response.length != 2) {
+                            result = "Password incorrect or stand cannot be changed.";
+                        } else {
+                            byte[] settings = java.util.Arrays.copyOfRange(config, 0, 4);
+                            settings[3] = (byte) 0xff;
+                            writePage(tech, 0xe3, settings);
+                            result = "Protection removed. Update the stand, then protect it again.";
+                        }
+                    }
+                }
+            }
+        } catch (Exception error) {
+            if (!request.protect) result = "Password incorrect or stand cannot be changed.";
+        } finally {
+            if (tech != null) try { tech.close(); } catch (Exception ignored) {}
+            protectionRequest = null;
+            java.util.Arrays.fill(request.password, (byte) 0);
+            nfc.disableReaderMode(this);
+            show(result);
+        }
+    }
+
+    private void writePage(NfcA tag, int page, byte[] value) throws IOException {
+        byte[] command = new byte[]{(byte) 0xa2, (byte) page, value[0], value[1], value[2], value[3]};
+        byte[] response = tag.transceive(command);
+        if (response.length != 1 || (response[0] & 0x0f) != 0x0a) throw new IOException("Tag rejected write");
+    }
+
     @Override public void onTagDiscovered(Tag tag) {
+        ProtectionRequest request = protectionRequest;
+        if (request != null) { changeProtection(tag, request); return; }
         boolean clear = clearingTag;
         byte[] credential = wsc;
         if (!clear && credential == null) return;
