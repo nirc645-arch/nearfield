@@ -22,13 +22,21 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     private NfcAdapter nfc;
     private EditText ssid, password;
     private TextView status, heading, note, ssidLabel, passwordLabel;
-    private Button write, clear, protect, unprotect, englishButton, hebrewButton;
+    private Button write, clear, protect, unprotect, scanButton, englishButton, hebrewButton;
     private LinearLayout root;
     private boolean hebrew;
     private String statusEnglish = "Ready when you are.";
     private volatile byte[] wsc;
     private volatile boolean clearingTag;
     private volatile ProtectionRequest protectionRequest;
+    private volatile boolean waitingForScan = true;
+    private boolean introComplete;
+    private boolean standScanned;
+    private boolean hasRecords;
+    private boolean hasWifi;
+    private boolean protectionKnown;
+    private boolean standProtected;
+    private volatile byte[] scannedTagId;
 
     private static class ProtectionRequest {
         final boolean protect;
@@ -71,6 +79,10 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         note.setLineSpacing(dp(3), 1f);
         root.addView(note, spacing(12));
 
+        scanButton = button("Scan stand", false);
+        root.addView(scanButton, spacing(24));
+        scanButton.setOnClickListener(v -> beginScan());
+
         ssidLabel = label("Wi-Fi name");
         root.addView(ssidLabel, spacing(34));
         ssid = input("Enter network name");
@@ -85,12 +97,13 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
 
         write = button("Write to NFC stand", true);
         root.addView(write, spacing(28));
-        clear = button("Clear NFC tag", false);
-        root.addView(clear, spacing(10));
         protect = button("Protect Wi-Fi stand", false);
         root.addView(protect, spacing(10));
         unprotect = button("Remove stand protection", false);
         root.addView(unprotect, spacing(10));
+        clear = button("Clear NFC tag", false);
+        clear.setTextColor(0xffe7a6a4);
+        root.addView(clear, spacing(10));
 
         status = text("Ready when you are.", 13, 0xffaaaaaa);
         status.setLineSpacing(dp(2), 1f);
@@ -118,8 +131,12 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         screen.addView(scrollView);
         setContentView(screen);
         setLanguage(hebrew);
+        updateActions(false);
+        setStatus("Hold your phone against the stand to scan.");
         if (state == null && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             showIntro(screen, scrollView);
+        } else {
+            introComplete = true;
         }
     }
 
@@ -162,6 +179,8 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
                         .withEndAction(() -> {
                             screen.removeView(intro);
                             content.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+                            introComplete = true;
+                            beginScan();
                         }).start())
                 .start();
     }
@@ -281,6 +300,7 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
         clear.setText(t("Clear NFC tag"));
         protect.setText(t("Protect Wi-Fi stand"));
         unprotect.setText(t("Remove stand protection"));
+        scanButton.setText(t(standScanned ? "Scan another stand" : "Scan stand"));
         status.setText(t(statusEnglish));
         englishButton.setTextColor(hebrew ? 0xff888888 : 0xfff7f7f5);
         hebrewButton.setTextColor(hebrew ? 0xfff7f7f5 : 0xff888888);
@@ -304,6 +324,13 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             case "Enter password": return "הזינו סיסמה";
             case "Write to NFC stand": return "כתיבה למעמד ה-NFC";
             case "Clear NFC tag": return "מחיקת תג ה-NFC";
+            case "Scan stand": return "סריקת העמדה";
+            case "Scan another stand": return "סריקת עמדה אחרת";
+            case "Hold your phone against the stand to scan.": return "הצמידו את הטלפון לעמדה כדי לסרוק אותה.";
+            case "Could not read the stand. Tap Scan stand to try again.": return "לא הצלחנו לקרוא את העמדה. לחצו על סריקת העמדה ונסו שוב.";
+            case "Stand scanned. Choose an action.": return "העמדה נסרקה. בחרו פעולה.";
+            case "Stand scanned. Protection status is unavailable.": return "העמדה נסרקה. לא ניתן לבדוק את מצב ההגנה.";
+            case "This is a different stand. Scan it before making changes.": return "זו עמדה אחרת. סרקו אותה לפני ביצוע שינויים.";
             case "Protect Wi-Fi stand": return "הגנה על עמדת ה-Wi-Fi";
             case "Remove stand protection": return "הסרת ההגנה מהעמדה";
             case "Set a stand password": return "הגדרת סיסמה לעמדה";
@@ -407,6 +434,125 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
 
     private LinearLayout.LayoutParams inputSpacing() {
         return spacing(8);
+    }
+
+    private void beginScan() {
+        waitingForScan = true;
+        standScanned = false;
+        scannedTagId = null;
+        wsc = null;
+        clearingTag = false;
+        protectionRequest = null;
+        updateActions(false);
+        scanButton.setText(t("Scan stand"));
+        if (nfc == null || !nfc.isEnabled()) {
+            setStatus("Turn on NFC in phone settings.");
+            return;
+        }
+        setStatus("Hold your phone against the stand to scan.");
+        nfc.enableReaderMode(this, this,
+                NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B, null);
+    }
+
+    private void scanStand(Tag tag) {
+        waitingForScan = false;
+        boolean records = false;
+        boolean wifi = false;
+        boolean known = false;
+        boolean locked = false;
+        boolean readOk = false;
+        Ndef ndef = Ndef.get(tag);
+        try {
+            if (ndef != null) {
+                NdefMessage message = ndef.getCachedNdefMessage();
+                if (message == null) {
+                    ndef.connect();
+                    message = ndef.getNdefMessage();
+                    ndef.close();
+                }
+                readOk = true;
+                if (message != null) {
+                    for (NdefRecord record : message.getRecords()) {
+                        if (record.getTnf() != NdefRecord.TNF_EMPTY) records = true;
+                        if (record.getTnf() == NdefRecord.TNF_MIME_MEDIA &&
+                                java.util.Arrays.equals(record.getType(),
+                                        "application/vnd.wfa.wsc".getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
+                            wifi = true;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            try { if (ndef != null) ndef.close(); } catch (Exception ignoredClose) {}
+        }
+        if (readOk) {
+            NfcA tech = NfcA.get(tag);
+            try {
+                if (tech != null) {
+                    tech.connect();
+                    byte[] version = tech.transceive(new byte[]{0x60});
+                    if (version.length == 8 && version[0] == 0 && version[1] == 4
+                            && version[2] == 4 && version[3] == 2
+                            && version[6] == 0x13 && version[7] == 3) {
+                        byte[] config = tech.transceive(new byte[]{0x30, (byte) 0xe3});
+                        if (config.length == 16 && (config[4] & 0x47) == 0) {
+                            known = true;
+                            locked = (config[3] & 0xff) != 0xff;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                known = false;
+            } finally {
+                if (tech != null) try { tech.close(); } catch (Exception ignored) {}
+            }
+        }
+        nfc.disableReaderMode(this);
+        final boolean resultOk = readOk, resultRecords = records, resultWifi = wifi;
+        final boolean resultKnown = known, resultLocked = locked;
+        final byte[] tagId = tag.getId().clone();
+        runOnUiThread(() -> {
+            if (!resultOk) {
+                setStatus("Could not read the stand. Tap Scan stand to try again.");
+                return;
+            }
+            scannedTagId = tagId;
+            standScanned = true;
+            hasRecords = resultRecords;
+            hasWifi = resultWifi;
+            protectionKnown = resultKnown;
+            standProtected = resultLocked;
+            scanButton.setText(t("Scan another stand"));
+            updateActions(true);
+            setStatus(resultKnown ? "Stand scanned. Choose an action."
+                    : "Stand scanned. Protection status is unavailable.");
+        });
+    }
+
+    private void updateActions(boolean animate) {
+        View[] fields = {ssidLabel, ssid, passwordLabel, password};
+        for (View view : fields) view.setVisibility(standScanned ? View.VISIBLE : View.GONE);
+        Button[] actions = {write, protect, unprotect, clear};
+        boolean[] showAction = {standScanned, standScanned && hasWifi && protectionKnown && !standProtected,
+                standScanned && hasWifi && protectionKnown && standProtected, standScanned && hasRecords};
+        int shown = 0;
+        for (int i = 0; i < actions.length; i++) {
+            Button action = actions[i];
+            action.animate().cancel();
+            action.setVisibility(showAction[i] ? View.VISIBLE : View.GONE);
+            if (showAction[i]) {
+                action.setAlpha(1f);
+                action.setTranslationY(0f);
+                if (animate && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+                    action.setAlpha(0f);
+                    action.setTranslationY(dp(12));
+                    action.animate().alpha(1f).translationY(0f)
+                            .setStartDelay(shown * 100L).setDuration(320)
+                            .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+                }
+                shown++;
+            }
+        }
     }
 
     private void prepare() {
@@ -518,7 +664,18 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             protectionRequest = null;
             java.util.Arrays.fill(request.password, (byte) 0);
             nfc.disableReaderMode(this);
-            show(result);
+            final String completedResult = result;
+            runOnUiThread(() -> {
+                if (completedResult.equals("Stand protected. Keep your password to update it later.")) {
+                    protectionKnown = true;
+                    standProtected = true;
+                } else if (completedResult.equals("Protection removed. Update the stand, then protect it again.")) {
+                    protectionKnown = true;
+                    standProtected = false;
+                }
+                updateActions(false);
+                setStatus(completedResult);
+            });
         }
     }
 
@@ -529,6 +686,11 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     }
 
     @Override public void onTagDiscovered(Tag tag) {
+        if (waitingForScan) { scanStand(tag); return; }
+        if (scannedTagId == null || !java.util.Arrays.equals(scannedTagId, tag.getId())) {
+            show("This is a different stand. Scan it before making changes.");
+            return;
+        }
         ProtectionRequest request = protectionRequest;
         if (request != null) { changeProtection(tag, request); return; }
         boolean clear = clearingTag;
@@ -546,7 +708,12 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
             if (message.toByteArray().length > ndef.getMaxSize()) { show("This tag does not have enough space."); return; }
             ndef.writeNdefMessage(message);
             wsc = null; clearingTag = false; nfc.disableReaderMode(this);
-            show(clear ? "Tag cleared. You can write new details now." : "Done. Your stand is ready for customers.");
+            runOnUiThread(() -> {
+                hasRecords = !clear;
+                hasWifi = !clear;
+                updateActions(false);
+                setStatus(clear ? "Tag cleared. You can write new details now." : "Done. Your stand is ready for customers.");
+            });
             if (!clear) runOnUiThread(this::showWriteSuccess);
         } catch (Exception e) { show("Could not write this tag. Try another NFC tag."); }
         finally { try { ndef.close(); } catch (Exception ignored) {} }
@@ -588,6 +755,10 @@ public class MainActivity extends Activity implements NfcAdapter.ReaderCallback 
     }
 
     private void show(String text) { runOnUiThread(() -> setStatus(text)); }
+    @Override protected void onResume() {
+        super.onResume();
+        if (introComplete && waitingForScan) beginScan();
+    }
     @Override protected void onPause() { super.onPause(); if (nfc != null) nfc.disableReaderMode(this); }
 
     private static byte[] makeCredential(String name, String password) throws IOException {
